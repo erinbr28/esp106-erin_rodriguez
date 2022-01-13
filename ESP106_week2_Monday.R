@@ -23,7 +23,6 @@ f("erin")
 # Square these numbers and sum them
 # (stretch goal: make a variant that can handle NA values - no extra points, just a challenge)
 d <- c(1,5,2,4,6,2,4,5)
-
 sumOfSquares <- function(d) {
   temp <- d-mean(d, na.rm=TRUE)
   sum((temp*temp), na.rm=TRUE)
@@ -44,7 +43,6 @@ j
 odd <- 0
 for (i in 1:10) {
   if ((i%%2)==1) {
-    print(i)
     odd <- odd+i
   }
 }
