@@ -7,10 +7,10 @@
 ## 1) Write a function 'f' that behaves like this:
 ## > f('Jim')
 ## [1] "hello Jim, how are you?"
-greeting <- function(name) {
+f <- function(name) {
   paste("hello ", name, ", how are you?", sep = "")
 }
-greeting("erin")
+f("erin")
 
 ## 2) Write a function 'sumOfSquares' that behaves like this:
 
