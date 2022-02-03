@@ -14,7 +14,9 @@ In this midterm we will analyze some data on the conservation status of species 
 **First read in the file conservationdata.csv**
 This has data on over 53,000 North American species - a unique ID number (speciesid), scientific name (species name), taxonomic grouping (i.e. what type of species it is, taxon), the conservation status of that species in North America, as estimated by the organization [NatureServe](https://www.natureserve.org/conservation-tools/conservation-rank-calculator) (conservation_status), and whether the species is listed as threated or endangered under the US Endangered Species Act (listed, a value of 1 indicates the species is listed, a value of 0 indicates it is not).
 
-
+```{r, message=FALSE, warning=FALSE}
+conservationdata<-data.frame(read.csv("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 1\\conservationdata.csv"))
+```
 The conservation status values can be interpreted as follows:
 
 1 - Critically Imperiled
@@ -31,30 +33,55 @@ Answer the following questions, showing your "working" in the chunks of R code. 
 Make sure to add informative axis titles and, where appropriate, units to your answers.
 
 1. What fraction of species in the dataset are listed under the Endangered Species Act? (2 points)
-
+```{r, message=FALSE, warning=FALSE}
+percentendangered<-round(((sum(conservationdata$listed)/nrow(conservationdata))*100), 2)
+print(paste0(percentendangered, "% of species in the dataset are listed under the Endangered Species Act"))
+```
 2. Make a table (i.e. data frame) giving the breakdown of species by taxonomic group (i.e. one column is the taxonomic group and the second column is what fraction of the dataset that group represents) (4 points)
 
 *Hint: Remember the query taxoncolumn==specific_taxon gives a vector of TRUE and FALSE corresponding to each row in the column. You can sum this up to get the total number in that taxon.* 
 
 You can use a for loop for this, but it is not required. 
+```{r, message=FALSE, warning=FALSE}
+percentcolumn<-c()
+taxons<-unique(conservationdata$taxon)
+df2<-data.frame(Taxons=taxons)
+for(i in 1:nrow(df2)){
+  amount<-sum(conservationdata$taxon == df2[i, "Taxons"])
+  percent<-round(((amount/nrow(conservationdata))*100), 2)
+  percentcolumn<-append(percentcolumn, percent)
+}
+df2<-cbind(df2, Percent=percentcolumn)
 
+```
 
 3. a) One interesting question is how the conservation status varies between different taxonomic groups. Make a plot showing the distribution of conservation status within each taxonomic group (3 points)
 
 *Hint: stat="count" (counts up and plots the number of observations, i.e. species, within each group) and position="fill" might both be useful here.* 
-
+```{r, message=FALSE, warning=FALSE}
+ggplot(conservationdata, aes(fill=conservation_status, x=taxon))+
+  geom_bar(Position="fill",stat= "count")+
+  ggtitle("Conservation Status Within Each Taxonomic Group")
+```
 
 b) Based on this graph, what is something we might be concerned about in terms of analyzing the data on conservation status, particularly for fungi and invertebrates? (1 point)
 
-**Answer:** 
+**Answer: We don't know the status of a large portion of fungi and invertebrates so it's possible that we are underestimating the threat of extinction to these taxons** 
+
 
 **Now read in the second data file, spendingdata.csv**
 This dataset has a species id that matches the species id in the conservation dataset (speciesid), year, and the spending on conservation of that species (spending, in 2015 $, i.e. accounting for inflation)
-
+```{r, message=FALSE, warning=FALSE}
+spendingdata<-data.frame(read.csv("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 1\\spendingdata.csv"))
+mergeddata<-data.frame(read.csv("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 1\\mergeddata.csv"))
+```
 
 4. Merge in the data from the conservation status data frame to the spending data frame, so that we have information on species names, taxonomic group, and conservation status with the spending data. (2 points)
 
+```{r, message=FALSE, warning=FALSE}
+df4<-merge(conservationdata, spendingdata)
 
+```
 
 *NOTE: If you have trouble with this step, there is a file mergeddata.csv on Canvas. You can download that and use for subsequent questions.* 
 
