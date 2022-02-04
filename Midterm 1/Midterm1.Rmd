@@ -1,6 +1,6 @@
 ---
 title: "Midterm One"
-author: "Fran M"
+author: "Erin Rodriguez"
 date: "February 2, 2022"
 output: html_document
 ---
