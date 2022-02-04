@@ -59,6 +59,7 @@ df2<-cbind(df2, Percent=percentcolumn)
 
 *Hint: stat="count" (counts up and plots the number of observations, i.e. species, within each group) and position="fill" might both be useful here.* 
 ```{r, message=FALSE, warning=FALSE}
+require(ggplot2)
 ggplot(conservationdata, aes(fill=conservation_status, x=taxon))+
   geom_bar(Position="fill",stat= "count")+
   ggtitle("Conservation Status Within Each Taxonomic Group")
@@ -86,14 +87,27 @@ df4<-merge(conservationdata, spendingdata)
 *NOTE: If you have trouble with this step, there is a file mergeddata.csv on Canvas. You can download that and use for subsequent questions.* 
 
 5. a) Make a plot showing the distribution of spending in the year 2016 (3 points)
-
+```{r, message=FALSE, warning=FALSE}
+require(scales)
+df5<-subset(df4, Year==2016)
+ggplot(df5, aes(x=speciesname, y=spending))+
+  geom_histogram(stat="identity")+
+  theme(axis.text.x=element_text(angle=90, vjust=0.5, hjust=1, size=2))+
+  scale_y_continuous(labels = scales::comma, limits=c(0,22000000))+
+  scale_x_discrete(label = function(x) stringr::str_trunc(x, 12))
+```
 
 
 b) Notice the (very) long right tail on spending data - we spend a lot on a very small number of species. Identify the 3 species with the most spending in 2016. (2 points)
-
+```{r, message=FALSE, warning=FALSE}
+df5ordered<-df5[order(-df5$spending),]
+for (i in 1:3){
+  print(df5ordered[i, "speciesname"])
+}
+```
 
 Look up these scientific names - what type of species are these?
-**Answer:** 
+**Answer: Chinook salmon, Rainbow Trout, Coho salmon** 
 
 6. Finally, we will use a regression to look at the relationship between spending and species taxon.
 
@@ -103,13 +117,23 @@ Remember that log(0)=infinity. That means we have to drop observations with zero
 a) Drop the rows where spending == 0 from the data frame and then make a new column with the logarithm (log()) of spending in each year. (2 points)
 
 *HINT: Remember you can drop rows from a dataframe using a negative index - ie. df[-c(rows to drop),]*
-
+```{r, message=FALSE, warning=FALSE}
+df6<-df4[df4$spending!=0,]
+logcolumn<-c()
+for (i in 1:nrow(df6)){
+  logcolumn<-append(logcolumn, log(df6[i, "spending"]))
+}
+df6<-cbind(df6, logspending=logcolumn)
+```
 
 
 *Optional: Look at the distribution of the logged spending variable and see how it looks different from the plot you made in question 5a*
 
 b) Run a regression of logged spending on taxonomic group and print the summary for the regression below (3 points)
-
+```{r, message=FALSE, warning=FALSE}
+regression6b<-lm(logspending~taxon, data=df6)
+summary(regression6b)
+```
 
 c) The way to interpret these coefficients are as the fractional difference in spending between the taxonomic group (e.g. Birds, Fishes etc) and the "dropped" group, where by default the dropped group will be Amphibians. Positive numbers indicate that group has more spent on it than Amphibians and negative numbers indicate it has less spent on it. 
 
