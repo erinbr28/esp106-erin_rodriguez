@@ -1,0 +1,275 @@
+---
+title: "Lab 7"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Lab 7
+
+In this lab we will practice working with raster data, in this case in the context of climate models. I have given you 4 sets of data:
+
+1. Climate Model Data_Historic - this is a NetCDF file with output from a climate model. Data is monthly average air temperature for 1920-2005
+2. Climate Model Data_Future - this is a NetCDF file with climate model output for the period 2006-2080
+3. Observed Temp Data - this is gridded data based on weather station and satellite data. Data is monthly for 1991-2000
+4. Population data - gridded counts of population for a number of years
+
+We will use the the packages raster, rnaturalearth, sf, tidyr, ggplot2, lubridate, and ncdf4.
+
+The first part of the lab will compare modeled and observed climate data for major cities around the world. The second part of the lab will combine the population data and future climate data to project future changes in global temperature. 
+
+#Part 1
+
+1a. Read in the historic climate model data as a raster brick(). Use "TREFHT" (temperature at reference height) in the varname argument.
+```{r}
+setwd("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Climate Model Data_Historic")
+install.packages("rgdal")
+install.packages("raster")
+install.packages("rnaturalearth")
+install.packages("sf")
+install.packages("tidyr")
+install.packages("ggplot2")
+install.packages("lubridate")
+install.packages("ncdf4")
+require(raster)
+require(rnaturalearth)
+require(sf)
+require(tidyr)
+require(ggplot2)
+require(lubridate)
+require(ncdf4)
+require(rgdal)
+historic<-brick("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Climate Model Data_Historic\\b.e11.B20TRC5CNBDRD.f09_g16.002.cam.h0.TREFHT.192001-200512.nc", varname = "TREFHT")
+```
+
+1b. Use extent() to see the latitute and longitude of the raster brick you created in a. Note that the longitude goes form 0 to 360 (ish) instead of the more typical -180 to 180. This will cause a problem later on so use the rotate() function to change the longitude coordinates. Use extent again on the rotated object to check the longitude goes from -180 to 180 (ish)
+
+```{r}
+
+#Note - this step is quite compontationally intensive so could take a few minutes
+extent(historic)
+historic = rotate(historic)
+extent(historic)
+
+```
+
+
+2a. USe the ne_download() function to get a sf object of major cities ("populated_places"). Subset to get just the 10 most populous cities based on 2020 population (POP2020 column)
+
+```{r}
+
+#Hint 1: Check the object type of the POP2020 column. If necessary convert to a numeric vector using as.numeric()
+
+#Hint 2: The function order() will give you the index value corresponding to the ascending or descending numerical order of a column
+populated_places <- ne_download(type = "populated_places", category = "cultural", returnclass = "sf")
+populated_places$POP2020 = as.numeric(populated_places$POP2020)
+populated_places = populated_places[order(populated_places$POP2020, decreasing = TRUE),]
+top <- populated_places[(1:10),]
+
+```
+
+2b. Make a plot of the temperature data for January 1920 and overlay the 10 major cities. I've given you this plot as Plot1 on Canvas.
+
+```{r}
+#Hint: you can add layers to a plot in base R using the add=TRUE argument
+rotateplot = plot(historic$X1920.02.01)
+plot10= plot(top$geometry, add = TRUE, pch = 23, bg="blue")+
+  title("Temperature Jan 1920")
+
+```
+
+2c. What about the plot gives you confidence this is actually showing temperature data from a January? What are the units of the temperature data?
+
+**Answer:The countries in the Northern Hemisphere have a lower overall temperature during the winter month of January. Units are in Kelvin**
+
+3a. Read in the observed temperature data as a raster brick, using "tmp" for the varname argument
+
+```{r}
+setwd("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Observed Temp Data")
+observed <- brick("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Observed Temp Data\\cru_ts4.03.1991.2000.tmp.dat.nc", varname = "tmp")
+
+```
+
+3b. Note that this climate model data is for 1920-2005 but the observation data is only from 1991-2000. Use subset() from the raster package to subset the climate model data to just the years 1991-2000
+
+```{r}
+years <- rep(1920:2005,each=12)
+sub <- raster::subset(historic, which(years%in%1991:2000))
+
+
+```
+
+4. Use the extract() from the raster package to produce two data-frames, one with observed and one with modeled temperature values for each city. Change the units of the modeled data so they match the units of the observed data.
+
+```{r}
+#Hint: both the tidry and raster packages have a function names extract(). Specify you want to use the one from the raster package using raster::extract()
+modeled <- raster::extract(sub, top)
+
+observedraster <- raster::extract(observed, top)
+modeled <- modeled - 273.15
+
+```
+
+We have to do a bit of data-wrangling to compare modeled and observed temperature data for each city.
+
+5a. Add a column to both data-frames with the names of the cities using the NAME column from the city data frame
+
+```{r}
+modeled = as.data.frame(modeled)
+modeled$City = top$NAME
+
+observedraster = as.data.frame(observedraster)
+observedraster$City = top$NAME
+```
+
+5b. Use pivot_longer() from the tidyr package to turn both data-frames into tidy data-frames, with one row for each unique city-month combination
+
+```{r}
+#Hint: you want to use the first 120 columns (10 years of 12 months each) to pivot (cols argument in the pivot_longer function). Use the values_to argument to name the temperature data column either "observed" or "simulated".
+observedtidy <- pivot_longer(observedraster, cols = 1:120, values_to = 'observed')
+modeledtidy <- pivot_longer(modeled, cols = 1:120, values_to = 'simulated')
+```
+
+5c. Notice that the modeled and observed rasters have used slightly different conventions for naming the months. You can see this in the "name" column of the two data frames you made in 5b. The model output uses the first of the month (e.g. 1991.02.01) whereas the observational data uses the middle of the month (e.g. 1991.01.16). This is a problem since we want to merge together the two data frames to compare observed and simulated data.
+
+To merge the two data frames together, first we need to "chop off" the last two digits in the month ids in both data frames. One way to do this is to use the substr() function to return some subset of a character vector.
+
+Add a new column to both your data frames from 5b named "yearmonth" that strips out the day from the second data frame column to just leave the year and month data.
+
+```{r}
+observedtidy$yearmonth = substr(observedtidy$name, start = 1, stop = 8)
+modeledtidy$yearmonth = substr(modeledtidy$name, start = 1, stop = 8)
+```
+
+5d. Merge together the observed and modeled city data into a single data-frame. 
+
+```{r}
+#Hint: you will want to specify two columns in the "by" argument in merge(). Think about what two columns those should be (i.e. what combination of columns identifies a unique observation that matches across the two dataframes)
+merged <- merge(modeledtidy, observedtidy, by = c("City", "yearmonth"))
+```
+
+5e. Make a plot showing observed vs modeled temperature for the 10 cities. Add a 1:1 line which showing the exact match between observed and modeled data, and two dashed lines showing +/- 2 degree error. I have given you the plot you are aiming for as Plot2 on Canvas
+
+```{r}
+ggplot(merged, mapping = aes(x = observed, y = simulated, col = City))+
+  geom_point(size = 0.8)+
+  geom_abline()+
+  geom_abline(intercept = c(2,-2), linetype = "dotted")+
+  labs(x = "Monthly Observed Temperature 1991-2000 (degrees C)", y = "Monthly Simulated Temperature 1991-2000 (degrees C)")+
+  theme_bw()
+
+```
+
+#Part 2
+
+In the second part of the lab, we will use projections of future temperature change (until 2080) and a map of the distribution of population in 2020 to get global, population-weighted projected warming.
+
+6. Read in the netCDF file with projected climate model temperature (in the "Climate Model Data_Future" directory) as a raster brick. Use the rotate() function again as you did in 1b to transform the coordinates to -180 to 180. Use varname="TREFHT". This has gridded projections of monthly global temperature between 2006 and 2020 under a high-emissions scenario (referred to as RCP8.5).
+
+```{r}
+setwd("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Climate Model Data_Future")
+
+future = brick("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Climate Model Data_Future\\b.e11.BRCP85C5CNBDRD.f09_g16.002.cam.h0.TREFHT.200601-208012.nc", varname = "TREFHT")
+
+future = rotate(future)
+extent(future)
+
+```
+
+7a. Read in the netCDF data on population in the "Population" directory as a raster brick. (There is only one variable in this netCDF, so you can leave the varname argument empty this time). This is gridded population count at 15 arc minute resolution.
+
+```{r}
+setwd("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Population")
+
+population = brick("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Population\\gpw_v4_population_count_adjusted_rev11_15_min.nc")
+```
+
+7b. We want only the 5th layer in this raster brick, which corresponds to population count in 2020. (Note - I know this some associated files that came with the netCDF file. Take a look at the csv file in the directory to see this documentation). Use the subset() function from the raster package to pull out just the population in 2020.
+
+```{r}
+setwd("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Population")
+popcsv = read.csv("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Lab 7\\Data\\Population\\gpw_v4_netcdf_contents_rev11.csv")
+
+pop2020 = raster::subset(population, 5)
+```
+
+8a. Now we want to eventually match the population grid to the projected temperature grid. But the problem is that the grid size of the climate model is much larger than the grid size of the population data. How many rows and columns does the climate model data have? How many rows and columns does the population data have?
+
+**Answer: Population has 1440 columns and 720 rows future has 288 columns and 192 rows**
+
+8b. To fix this problem we can aggregate the population raster up to the resolution of the climate model using the aggregate() function in the raster package. The population data you have is the population count (i.e. number of people in each grid cell). What function should we use to aggregate to larger grid cells? What function would we use instead if we had population density data instead of population count?
+
+**Answer:The sum function would be used for larger grid cells, density would use the mean = continuous data **
+
+8c. Aggregate the population data to a higher level of resolution, as close as possible to the climate model data.
+
+```{r}
+#Hint1: There are aggregate functions in other packages you might have loaded. Use raster::aggregate() to specify you want the one from the raster package
+
+#Hint2: The "fact" argument in the function is the factor by which cells are aggregated in the horizontal and vertical dimension. Because the climate model data is rectangular, not square, these will be different. Use the ratio of the number of columns in the two datasets and the number of rows to specify the fact argument. 
+
+#Hint3: Make sure to specify the function you described in 8b in the aggregate function
+numrow = 720/192
+numcol = 1440/288
+
+aggregated = raster::aggregate(pop2020, fact = c(numrow, numcol), fun = sum)
+
+```
+
+8d. If everything has gone according to plan, we would expect that summing up all the cells in the population raster should give us something close to the current population on the planet. Calculate that sum from your aggregated population data and compare to the total population today.
+
+```{r}
+#Hint: check out the cellStats() function in the raster package
+raster::cellStats(aggregated, stat = sum)
+```
+
+**Answer:**
+
+9a. Now we will use the population data to do a weighted averaging of the projected temperature data, to get the monthly temperature experienced by the average person between 2006 and 2080. 
+
+One problem is that even after the aggregation, the grids of the population data still don't quite match. Use the resample() function in the raster package to resample the aggregated population data to the climate model grid. 
+
+```{r}
+
+```
+
+9b. Now we can use the population raster to do a weighted average of the climate model data. Use the cellStats() function to calculate the population-weighted average temperature for each month. 
+
+Convert from the units of the climate model data into degrees C
+
+```{r}
+#Hint: a weighted average will put larger weight on higher population grid cells, but with the sum of the weights still summing to 1. You can get this by instead of taking a simple mean across the cells in the climate model data, summing the total of the climate model data * population and dividing that by the total population
+
+
+```
+
+9c. Run the code below to get the dates of each month from the netCDF file of future climate model data, substituting in the location of the climate model projections on your computer where I have put "FILENAME". You will need to install the ncdf4 package. 
+
+This is an example of how to access netCDF data other than through the raster package. You first open a connection to the file (nc_open()) and then read in just the data you want (ncvar_get()).
+
+```{r}
+library(ncdf4)
+library(lubridate)
+
+file=nc_open("FILENAME") #put the path to the future climate data on your computer (i.e. what you used in question 6) in place of FILENAME here
+date=ncvar_get(file,"date")
+date=ymd(date)
+
+```
+
+9d. Create a data-frame with two columns - the population-weighted temperature data (from 9b) and the date (from 9c)
+
+```{r}
+```
+
+10a. Make a plot of population-weighted global temperature. Add a smoothing line to show the average trend. The plot you are aiming for is on Canvas as Plot3.
+
+```{r}
+
+```
+
+10b. How do you think the rate of warming might be different if we were to calculate an area-weighted average across the globe, instead of the population weighted average shown in the plot from 10a? 
+
+**Answer:**

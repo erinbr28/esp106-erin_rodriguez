@@ -1,0 +1,136 @@
+---
+title: "Midterm 2"
+output: html_document
+---
+
+## Midterm 2
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(raster)
+require(sf)
+require(tidyr)
+require(ggplot2)
+```
+This midterm will require two datasets:
+
+1. A NetCDF file containing four layers with data on landuse in China. Each layer gives the fraction of the grid cell with land in the following land-types: urban (layer 1), cropland (layer 2), grassland (layer 3) and forest (layer 4). This file is named chinalanduse_MODIS_2012.nc - MODIS refers to the satellite data it is derived from and it is for the year 2012. This data came from this cool website: <https://terra.ipums.org/>
+
+2. A shapefile with polygons of provincial boundaries in China - chn_admbnda_adm1_ocha_2020.shp
+
+You will want to consider using the packages sf, raster, tidyr and ggplot2
+
+1. Read in the land use data as a raster brick and the shapefile as an sf object (2 points)
+
+```{r}
+landuse<-brick("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 2\\chinalanduse_MODIS_2012.nc")
+chinasf<-read_sf("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 2\\chn_admbnda_adm1_ocha_2020.shp")
+identical(st_crs(landuse), st_crs(chinasf))
+chinasf<-st_transform(chinasf, st_crs(landuse))
+identical(st_crs(landuse), st_crs(chinasf))
+```
+
+2a. Crop the land use raster brick to the same extent as the shapefile of Chinese provinces (1 point)
+
+```{r}
+extent(landuse)
+extent(chinasf)
+croppedlanduse<-crop(landuse,extent(chinasf))
+
+```
+
+2b. Rename the layers in the raster brick so they provide information about what data is in each of the 4 layers (2 points)
+
+```{r}
+
+#Hint: check out the names() function to find and assign names of layers of raster objects
+names(croppedlanduse)
+names(croppedlanduse)<-c("Urban", "Cropland", "Grassland", "Forest")
+names(croppedlanduse)
+
+```
+
+3. Make a figure with four panels. Plot each raster brick layer on one of the panels and overlay the polygons of the Chinese provinces. Title each panel with the type of land use it shows. (4 points)
+
+BONUS: Not required for full points, but worth a bonus 2 points - use a for loop to make the four panels of your figure (2 BONUS points)
+
+```{r}
+layers<-c("Urban", "Cropland", "Grassland", "Forest")
+attach(mtcars)
+par(mfrow=c(2,2))
+for (i in 1:4){
+  plot(croppedlanduse[[i]])
+  plot(chinasf$geometry, add=TRUE)+
+    title(layers[i])
+}
+```
+
+4a. Use the extract function in the raster package to find the fraction of each province in each of the four land use classes. [For this question you can assume all the grid cells have the same area] (3 points)
+
+```{r}
+#Hint: This step may take a long time. You might want to save the data frame after you extract the data so you don't have to run the code again. You can save objects in R as RData files (.Rdat) using save() and then read them in again using load(). 
+
+provincelanduse<-raster::extract(croppedlanduse, 
+                                 chinasf,
+                                 weights=FALSE,
+                                 na.rm=TRUE,
+                                 fun=mean,         # what to value to extract
+                                 df=TRUE)
+save(provincelanduse, file="C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 2\\provincelanduse.rdat")
+load("C:\\Users\\lukesau\\Desktop\\esp106-erin_rodriguez\\Midterm 2\\provincelanduse.rdat")
+Province<-chinasf$ADM1_EN
+plurenamed<-cbind(provincelanduse, Province)
+plurenamed<-subset(plurenamed, select=-c(ID))
+for (i in 1:nrow(plurenamed)){
+  print(paste0("The ", plurenamed[i,5], " is ", 100*round(plurenamed[i,1],3), "% Urban, ", 100*round(plurenamed[i,2],3), "% Cropland, ", 100*round(plurenamed[i,3],3), "% Grassland, and ", 100*round(plurenamed[i,4],3), "% Forest."))
+}
+```
+
+4b. Describe the potential problem with the area assumption made in 4a. How might it affect the calculation in that step? What could we do if we didn't want to make that assumption? (You dÄon't have to do it, just describe in theory) (2 points)
+
+**Answer: grid cells get smaller as you get closer to the poles. You can account for this by using weights=TRUE**
+
+4c. Sum up the fractions in the four land classes for each province and plot as a histogram. Why do they not sum to 1? (2 points)
+
+(Note: there are two polygons for which land-use data is missing and therefore the sum will be 0 - don't worry about that)
+
+**Answer:some grid cells probably have unreported land use or land use that doesn't fit in these 4 categories**
+
+```{r}
+pluwithsum<-cbind(plurenamed, Total=round((plurenamed$Urban+plurenamed$Cropland+plurenamed$Grassland+plurenamed$Forest),3))
+pluwithsum<-subset(pluwithsum, select=-c(Urban, Cropland, Grassland, Forest))
+ggplot(pluwithsum, aes(x=Province, y=Total))+
+  geom_histogram(stat="identity")+
+  theme(axis.text.x = element_text(angle = 90))+
+    xlab("")+
+    ylab("")
+
+```
+
+5a. Add in the names of the provinces to your data from step 4a (1 point)
+
+```{r}
+# already done in 4a:
+Province<-chinasf$ADM1_EN
+plurenamed<-cbind(provincelanduse, Province)
+plurenamed<-subset(plurenamed, select=-c(ID))
+```
+
+5b. Pivot the data frame so you have "tidy" data (i.e. one row for each province-landuse type) (2 points)
+
+```{r}
+#already done in 4c:
+tidyplu<-pivot_longer(plurenamed, cols=1:4, values_to="landuse")
+```
+
+6. Make a graph showing the breakdown of urban, cropland, grassland, and forest for each province. (4 points)
+
+```{r}
+ggplot(tidyplu, aes(x=Province, fill=name, y=landuse)) + 
+  geom_histogram(position="stack", stat="identity", show.legend = TRUE) +
+  theme(axis.text.x = element_text(angle = 90))+
+    xlab("")+
+    ylab("Fraction of Land Use")+
+    guides(fill=guide_legend("Type of Land Use"))
+```
+
+7. Upload your R markdown file, and your knitted output to Canvas. Push the R markdown file to your Github repository. (2 points)
