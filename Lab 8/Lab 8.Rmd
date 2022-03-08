@@ -1,0 +1,179 @@
+---
+title: "Lab 8"
+author: "Erin Rodriguez"
+date: "03/07/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Lab 8: Practicing Tidyverse, accessing and using census data, and assessing environmental inequities in the US
+
+In this lab we will create a dataset that merges county-level racial and income data from the Census Bureau with data on environmental pollution from EPA to investigate the associate between race, class, and environmental exposure in the US.
+
+Wherever possible, practice using Tidyverse syntax and functions
+
+1. First off we will access data from the US Census using a neat package "tidycensus" that allows you to access the census API direct from R. I will walk you through how to do this.
+
+1a. Start by installing and loading the package "tidycensus"
+```{r, message=FALSE, warning=FALSE}
+#install.packages("tidycensus") commented out so knit can run
+```
+1b. To access census data, you need to obtain a unique user ID (or "key") from [this]<http://api.census.gov/data/key_signup.html> website. You can request a key at the website. You will get an email with a long string of letters and numbers - click on the link in the email to activate that key. The string of letters and numbers is your key that you can use to access census data
+
+Set your census API key in your R session using census_api_key("YOUR KEy AS A STRING")
+```{r, message=FALSE, warning=FALSE}
+require("tidycensus")
+require("tidyverse")
+require("dplyr")
+census_api_key("0f7f2f104f1e19cfcc36368b05eebbc3cbc31c9f")
+```
+1c. First we will download the number of African American people in each county from the 2010 decennial census. Use the function get_decennial() from the tidycensus package to read in this data as a data frame in R. You will want to use the following arguments:
+geography="county", variables="H006003", summary_var="H006001", year=2010
+
+Note that the variable code H006003 corresponds to the African American population variable. The code H006001 corresponds to the total population in the county. You can see the list of data codes and their meaning using the load_variables() function.
+
+Notice the key columns in the data frame: the GEOID column is a unique 5 digit identifier for each county. The first two digits of the GEOID correspond to the state that county is located in. The column value gives the number of African Americans in the county and the summary_value gives the total population.
+```{r, message=FALSE, warning=FALSE}
+aabycounty<-as.data.frame(get_decennial(geography="county", variables="H006003", summary_var="H006001", year=2010))
+```
+1d. Now we will perform a number of tidyverse operations on this data frame. Use:
+- mutate() to create a STATE id column using the first two digits from the GEOID columns. The substr() function, will be useful here
+- filter() to filter out regions outside the continental US. Remove rows where the state is 02 (Alaska), 15 (Hawaii), or 72 (Puerto Rico). HINT: for this you might need to use the OR operator, which is a bar |. For example x>9|x<4 is the condition x>9 or x<4
+- mutate() to add a column with the % African American population in each county
+Try using the pipe operator to do these without creating any intermediate data frames
+
+Remember to load the tidyverse packages using library(tidyverse) - after you install tidyverse
+```{r, message=FALSE, warning=FALSE}
+trimmedaabc=aabycounty%>%
+  select(colnames(aabycounty))%>%
+  mutate(stateid=substr(GEOID,1,2),.keep="all")%>%
+  filter(!stateid%in%c("02","15","72"))%>%
+  mutate(AApop=value)
+```
+
+2. Now we will obtain income data from the America Community Survey (ACS). This is a survey of a representative sample of US households conducted every 5 years. It collects data on far more variables than the census and can also be accessed through tidycensus
+
+2.1 Use the function get_acs() to access data on the number of low-income households within a county for the year 2010. You will want to use the following arguments:
+geography = "county", variables=c("B06010_004","B06010_005","B06010_006"), year=2010, summary_var = "B06010_001"
+
+Note that these variable codes are as follows (based on information in load_variables(2010,"acs5"):
+B06010_001: Total number of households
+B06010_004: Income < $9,999
+B06010_005: Income $10,000 to \$14,999
+B06010_006: Income $15,000 to \$24,999
+
+For our purposes, we will count all the households with income below $25,000 as "low income"
+
+Note that in this case the "estimate" column gives the number of households in that county in that income group and the "summary_est" gives the total number of households. GEOID is the same county ID as you saw in the census data.
+```{r, message=FALSE, warning=FALSE}
+acs=get_acs(geography = "county", variables=c("B06010_004","B06010_005","B06010_006"), year=2010, summary_var = "B06010_001")
+```
+
+2.2 Use tidyverse functions and piping to sum up the number of households in each income group within each county to get the total number of low-income households and divide by the total number of households to get the % of low-income households
+
+HINT: you want to go from a data frame where the rows are unique county * income group to a data frame where each row is a county - a kind of aggregation. This means this is a case where you will want to use group_by() and summarize()
+```{r, message=FALSE, warning=FALSE}
+incomegroups<-acs%>%
+  select(colnames(acs))%>%
+  group_by(NAME)%>%
+  summarise(LI=sum(estimate),PercentLI=LI/summary_est)%>%
+  filter(!is.na(LI))%>%
+  distinct(NAME,.keep_all=TRUE)
+```
+3. I have provided you with county-level data on 6 different types of pollution in the file "ejdata.csv". These come from EPA's [EJSCREEN]<https://www.epa.gov/ejscreen> dataset. The variable definitions are as follows:
+
+DSLPM: Diesel Particulate Matter 
+CANCER: Cancer Risk Measure
+RESP: Respiratory Hazard Index
+PNPL: Superfund Proximity
+OZONE: Ozone Concentration Score
+PM25: PM 2.5 Concentration Score
+
+3.1 Read in the dataset.
+3.2 One issue that has likely arisen is that the leading zero in the GEOID column is cut off. This is a problem because it means you won't be able to merge with the other datasets. To fix that, use the following code, which adds back a leading zero to the county ID codes where it has been cut off:
+yourGEOIDcolumn=formatC(yourGEOIDcolumn,digits=4,flag="0")
+```{r, message=FALSE, warning=FALSE}
+ejdata<-read.csv("C:/Users/lukesau/Desktop/esp106-erin_rodriguez/Lab 8/ejdata.csv")
+ejdata$GEOID=formatC(ejdata$GEOID,digits=4,flag="0")
+```
+4. Merge together the data on race, income and pollution into one dataset
+
+HINT: If you get stuck wrangling the data, I have included a completed data frame on Canvas (fulldata.csv) - you can download that to complete the rest of the lab
+```{r, message=FALSE, warning=FALSE}
+merged=merge.data.frame(trimmedaabc,ejdata,by="GEOID")
+merged=merge.data.frame(merged,incomegroups,by="NAME")
+```
+5. Now we are ready to look at how race, income and exposure to environmental pollution vary across counties. This is challenging right now because the pollution and social variables are on very different scales. We will fix this by transforming all relevant variables to their quintile group (i.e. is a particular county in the bottom fifth, second from bottom fifth etc) before doing our analysis.
+
+Write a function that takes in a vector and returns the quintile group for each element in the vector. 
+
+Hint: you will want to use quantile() to find the breaks for each quintile group. The relevant probabilities will be c(0,0.2,0.4,0.6,0.8) - i.e. 20%, 40%, 60% etc. You can then use these quantiles in the findInterval() function to find which group each county falls into
+```{r, message=FALSE, warning=FALSE}
+
+quintiles=function(x){
+temp1= quantile(x, prob =c(0,0.2,0.4,0.6,0.8))
+temp2=findInterval(x, temp1)
+return(temp2)}
+```
+6. Use mutate() to apply your quintile function to the two socio-economic variables (% African American and % low income) and the six environmental variables.
+
+HINT: specifying across(c(columnnames),function) within mutate allows you to apply the same function to multiple columns
+```{r, message=FALSE, warning=FALSE}
+quant<-merged%>%
+  mutate(across(c("AApop","DSLPM","CANCER","RESP","PNPL","OZONE","PM25","LI","PercentLI"),quintiles))
+```
+
+7. Now we will make a plot examining how exposure to pollution varies with race. I have provided this plot as part of the lab materials (Plot 1). For each quintile of African American population (x axis) it plots the mean quintile of environmental exposure, for each pollutant, with the central 95% of the distribution in each race quintile.
+
+7.1 First we need to do a bit more data wrangling to get things in a format for the plot.
+
+Use tidyverse operations to:
+- select the relevant columns we need: county ID and quintile of African American popualation, low-income, and the 6 pollution variables
+- use pivot_longer() to transform the data frame from one where each row is a county to one where each row is a county * pollution combination. In other words, the cols argument of pivot_longer() will be the 6 pollution variables
+- use group_by() and summarize() to calcuate the mean and standard deviation of environmental exposure for each pollutant and quintile of African American population
+```{r, message=FALSE, warning=FALSE}
+tidy<-quant%>%
+  select(GEOID,AApop,DSLPM,CANCER,RESP,PNPL,OZONE,PM25,LI,PercentLI)%>%
+  pivot_longer(4:9)%>%
+  group_by(AApop,name)%>%
+  dplyr::summarize(mean=mean(value,na.rm=TRUE),sd=sd(value))
+```
+
+7.2 Now we will use this data frame to make the plot. You will want to use geom_point(), geom_errorbar(), and facet_wrap() here. 
+
+HINT: geom_errorbar() requires a ymin and ymax aesthetic mapping. Remember that, assuming normal distribution, the central 95% of the distribution is given by ymin = mean - 1.96 X sd and ymax = mean + 1.96 X sd
+```{r, message=FALSE, warning=FALSE}
+ggplot(tidy,aes(x=AApop,y=mean))+
+  geom_point()+
+  facet_wrap("name")+
+  geom_errorbar(aes(ymin =mean-1.96*sd, ymax =mean+1.96*sd))+
+  xlab("African American Population")+
+  ylab("Environmental Exposure")
+```
+
+7.3 Now make a very similar plot, but examine variation in environmental expsure by both race and income (Plot2 on Canvas).
+
+HINT: You should have to make only *very very minor* changes to the code you used for part 7.1 and 7.2 (this is part of the benefits of coding using tidyverse). 
+```{r, message=FALSE, warning=FALSE}
+tidy2<-quant%>%
+  select(GEOID,AApop,DSLPM,CANCER,RESP,PNPL,OZONE,PM25,LI,PercentLI)%>%
+  pivot_longer(4:9)%>%
+  group_by(AApop,name,PercentLI)%>%
+  dplyr::summarize(mean=mean(value,na.rm=TRUE),sd=sd(value))
+```
+
+8. What preliminary conclusions might you draw from this exploratory data analysis about the correlation between race, class and environmental exposure across the US?
+## Low income african americans are exposed to pollutants at a higher rate
+
+STRETCH GOAL: Not for credit, but if you want to challenge yourself to use nesting, tidyr, broom, map etc.
+
+1. Use nest, map, and tidy to estimate state-level regression models of the cancer risk quintile on race and class quintile and collect the regression estimates into a data frame
+
+
+2. Plot the race and class coefficients with 95% confidence intervals, using colors to show coefficients that are statistically significant at the 95% level (Plot3 on Canvas)
+
+
+
